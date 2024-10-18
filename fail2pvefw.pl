@@ -7,6 +7,7 @@ use Data::Validate::IP qw(is_ip is_ipv4);
 use DB_File;
 use File::Basename;
 use Getopt::Long qw(HelpMessage);
+use IO::Socket::SSL qw(SSL_VERIFY_NONE SSL_VERIFY_PEER);
 use POSIX qw(strftime);
 
 # Change as appropriate
@@ -18,10 +19,12 @@ GetOptions(
   'foreground'  => \ my $foreground,
   'help'        => sub { HelpMessage(0) },
   'ipset=s'     => \(my $ipset = 'fail2ban'),
+  'manual'      => \(my $manual_verification = 0),
   'timestamp=f' => \(my $timestamp = time()),
 ) or HelpMessage(1);
 
 $comment = strftime "[%Y/%m/%d %H:%M:%S] $comment", localtime($timestamp);
+$foreground = 1 if $manual_verification;
 
 =pod
 
@@ -34,10 +37,11 @@ fail2pvefw.pl - insert banned IP's in an IPSet on a Proxmox host
 fail2pvefw.pl [-fh] [-i <IPSet>] [-c comment] <ban|unban> <cidr>
 
   -c,--comment    Comment added (defaults to 'Added on YYYY/MM/DD HH:MM:SS')
-  -f,--foreground Do not background the job. Necessary once if the SSL
-                  certificate requires approving.
+  -f,--foreground Do not background the job
   -h,--help       Print this help
-  -i,--ipset      IPSet to use (defaults to 'fail2ban')
+  -i,--ipset      IPSet to use - defaults to 'fail2ban'
+  -m,--manual     Allow manual SSL certificate verification - implies -f!
+  -t,--timestamp  Timestamp of ba, in secs since epoch
 
 =cut
 
@@ -72,10 +76,10 @@ my $conn = PVE::APIClient::LWP->new(
     apitoken => $apitoken,
     host => $host,
 
-    # Do not enforce strict SSL checks
-    ssl_opts => { verify_hostname => 0 },
+    # Do not enforce strict SSL checks. Note that for some reason SSL_VERIFY_NONE does not work...
+    ssl_opts => { SSL_verify_mode => SSL_VERIFY_NONE, verify_hostname => 0 },
     # allow manual fingerprint verification
-    manual_verification => 1,
+    manual_verification => $manual_verification,
     # and store the result in a persistent hash for future use
     cached_fingerprints => \%cache,
     );

@@ -73,15 +73,16 @@ Usage:
     fail2pvefw.pl [-fh] [-i <IPSet>] [-c comment] <ban|unban> <cidr>
 
       -c,--comment    Comment added (defaults to 'Added on YYYY/MM/DD HH:MM:SS')
-      -f,--foreground Do not background the job. Necessary once if the SSL
-                      certificate requires approving.
+      -f,--foreground Do not background the job
       -h,--help       Print this help
-      -i,--ipset      IPSet to use (defaults to 'fail2ban')
+      -i,--ipset      IPSet to use - defaults to 'fail2ban'
+      -m,--manual     Allow manual SSL certificate verification - implies -f!
+      -t,--timestamp  Timestamp of ba, in secs since epoch
 ```
 
 #### Test that API access works
 
-To test if everything is set up correctly, simply start the script:
+To test if everything is set up correctly, simply start the script in foreground mode:
 
 ```
 $ /root/fail2pvefw.pl -f ban 1.2.3.4
@@ -96,14 +97,13 @@ To remove this IP address from the `fail2ban` IPSet, either use the Proxmox GUI,
 $ /root/fail2pvefw.pl -f unban 1.2.3.4
 ```
 
-*IMPORTANT*
+#### Using self-signed certificates
 
-`libpve-apiclient-perl` insists on verifying the SSL certificate provided by the Proxmox host. If this is a
-self-signed certificate, this check can only be satisfied by manually confirming the certificate. By running the
-above test in foreground mode, you can manually approve the certificate if necessary:
+If you're using a self-signed SSL certificate then the SSL verification will fail, and you need to manually approve
+the SSL certificate from your server.
 
 ```
-$ /root/fail2pvefw.pl -f ban 1.2.3.4
+$ /root/fail2pvefw.pl -m ban 1.2.3.4
 The authenticity of host '192.168.0.1' can't be established.
 X509 SHA256 key fingerprint is 07:86:CC:BE:@B:48:4C:68:E1:CA:C9:A4:4F:03:77:01:35:55:07:45:38:3B:87:34:63:96:37:76:6E:D5:CB:8E.
 Are you sure you want to continue connecting (yes/no)? yes
