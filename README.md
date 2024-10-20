@@ -3,9 +3,18 @@ Fail2Ban action to add banned IPs to an IPSet on a Proxmox host
 
 ## Description
 
-This is an extension for Fail2Ban, which makes it possible to have an action that adds a banned IP address to
-an IPSet defined at datacenter level in Proxmox. This IPSet can then be used in the firewall configuration of
-any node, VM or CT to block bad IPs.
+This is a script that can add and delete IPs to an IPSet from a Proxmov server's cluster firewall using
+the native Proxmox VE API.
+
+The first use of this script is as a helper script for Fail2Ban.
+
+When part of a Fail2Ban action, this script makes it possible to automatically add (ban) or remove (unban) an
+abusive IP address detected by Fail2Ban to an IPSet defined at the datacenter level in Proxmox. This IPSet can
+then be used in the firewall configuration of any node, VM or CT to block bad IPs.
+
+This script also supports resolving a hostname, and adding the IP address to an IPSet. This makes it possible
+to maintain an IPSet containing 'trusted' IPs, e.g., allowing only IPs in the 'trusted' IPSet to access the
+Proxmox VE GUI.
 
 This has been tested on Proxmox VE v8.2.7 and a Debian 12 VM with Fail2Ban v1.0.2-2.
 
@@ -68,9 +77,9 @@ my $host = qw(192.168.0.1);
 #### Usage
 
 ```
-$ /root/fail2pvefw.pl -h
 Usage:
-    fail2pvefw.pl [-fh] [-i <IPSet>] [-c comment] <ban|unban> <cidr>
+    fail2pvefw.pl [-fhm] [-t timestamp] [-i <IPSet>] [-c comment]
+    <ban|unban|dns> <host>
 
       -c,--comment    Comment added (defaults to 'Added on YYYY/MM/DD HH:MM:SS')
       -f,--foreground Do not background the job
@@ -126,6 +135,24 @@ A jail can have multiple actions. To add fail2pvefw as an action to a jail, do t
 banaction = iptables-allports[blocktype=DROP]
             fail2pvefw[name=sshd]
 ```
+
+#### Add a trusted IP address to an IPSet
+
+Suppose your home network is using a Dynamic DNS client to update some DNS entry, for example,
+`myhome.mooo.com`. Create a cron job on the server that checks every hour for changes to the IP
+address, and makes sure the current IP address is part of the IPSet `trusted`:
+
+```
+$ cat /etc/cron.hourly/update-trusted-ips.sh
+#!/bin/bash
+
+/root/fail2pvefw.pl -f -i trusted dns myhome.mooo.com 2>/dev/null
+
+```
+
+This adds the current IP address of `myhome.mooo.com` to the IPSet `trusted`. You can now allow
+access to port 8006 from any IPs in the IPSet `trusted`, enjoying access to your server's GUI
+without exposing the GUI to the entire world.
 
 ## Notes
 

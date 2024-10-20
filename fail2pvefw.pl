@@ -3,11 +3,12 @@
 use strict;
 use warnings;
 
+use Data::Dump;
 use Data::Validate::IP qw(is_ip is_ipv4);
 use DB_File;
-use File::Basename;
 use Getopt::Long qw(HelpMessage);
 use IO::Socket::SSL qw(SSL_VERIFY_NONE SSL_VERIFY_PEER);
+use IO::Socket;
 use POSIX qw(strftime);
 
 # Change as appropriate
@@ -34,7 +35,7 @@ fail2pvefw.pl - insert banned IP's in an IPSet on a Proxmox host
 
 =head1 SYNOPSIS
 
-fail2pvefw.pl [-fh] [-i <IPSet>] [-c comment] <ban|unban> <cidr>
+fail2pvefw.pl [-fhm] [-t timestamp] [-i <IPSet>] [-c comment] <ban|unban|dns> <host>
 
   -c,--comment    Comment added (defaults to 'Added on YYYY/MM/DD HH:MM:SS')
   -f,--foreground Do not background the job
@@ -48,13 +49,25 @@ fail2pvefw.pl [-fh] [-i <IPSet>] [-c comment] <ban|unban> <cidr>
 print STDERR "Wrong number of arguments!\n" and HelpMessage(1) unless $#ARGV+1 == 2;
 
 my $command = shift;
-print STDERR "Invalid command: $command\n" and HelpMessage(1) unless $command =~ /^(un)?ban$/;
+my $host_or_ip = shift;
 
-my $ip = shift;
-unless ( is_ip($ip) ) {
-    my ($address, $prefix_length) = $ip =~ /^([\d\w:\.]+)\/?(\d+)?$/;
+if ( 'dns' eq $command ) {
+
+  # Recieved a hostname, which we will resolve, then add/update in the IPSet
+
+} elsif ( $command =~ /^(un)?ban$/ ) {
+
+  # Received a cidr, which must be added (ban) or removed (unban) from the IPSet
+
+  unless ( is_ip($host_or_ip) ) {
+    my ($address, $prefix_length) = $host_or_ip =~ /^([\d\w:\.]+)\/?(\d+)?$/;
     print STDERR "Not a valid IP: $address\n" and HelpMessage(1) unless is_ip($address);
     print STDERR "Invalid prefix length: $prefix_length\n" and HelpMessage(1) unless $prefix_length <= (is_ipv4($address) ? 32 : 128);
+  }
+
+} else {
+
+  print STDERR "Invalid command: $command\n" and HelpMessage(1);
 }
 
 # Run the remainder of the script in background, unless running in foreground mode
@@ -85,9 +98,48 @@ my $conn = PVE::APIClient::LWP->new(
     );
 
 if ( "ban" eq $command ) {
-    $conn->post("/cluster/firewall/ipset/$ipset", { cidr => $ip, comment => $comment });
+    $conn->post("/cluster/firewall/ipset/$ipset", { cidr => $host_or_ip, comment => $comment });
+} elsif ( "unban" eq $command ) {
+    $conn->delete("/cluster/firewall/ipset/$ipset/$host_or_ip", {});
+} elsif ( "dns" eq $command ) {
+
+  my @addresses = gethostbyname($host_or_ip) or die "Can't resolve $host_or_ip: $!\n";
+  my %addresses; map { $addresses{inet_ntoa($_)} = 1 } @addresses[4 .. $#addresses];
+
+  my $result = $conn->get("/cluster/firewall/ipset/$ipset", {});
+  #dd($result);
+
+  # First step: cleanup what's in the IPSet
+  foreach my $ip ( @{$result} ) {
+
+    if ( exists $addresses{$ip->{'cidr'}} ) {
+
+      # Found an IP we're about to add/update.
+
+      if ( $ip->{'comment'} ne $host_or_ip ) {
+
+        # The IP has the wrong hostname, delete this
+        $conn->delete("/cluster/firewall/ipset/$ipset/$ip->{'cidr'}", {});
+      } else {
+
+        # Found a matching IP with the correct hostname, nothing to do
+        delete $addresses{$ip->{'cidr'}}
+      }
+    } elsif ( $ip->{'comment'} eq $host_or_ip ) {
+
+      # Found an IP for this hostname that we don't know about
+      # This is possibly an obsolete IP
+      $conn->delete("/cluster/firewall/ipset/$ipset/$ip->{'cidr'}", {});
+    }
+  }
+
+  # Second step: add all IPs we still have in our list
+  foreach my $ip ( keys %addresses ) {
+    $conn->post("/cluster/firewall/ipset/$ipset", { cidr => $ip, comment => $host_or_ip });
+  }
+
 } else {
-    $conn->delete("/cluster/firewall/ipset/$ipset/$ip", {});
+  # This should never happen
 }
- 
+
 exit 0;
