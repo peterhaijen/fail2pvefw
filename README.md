@@ -143,7 +143,7 @@ Suppose your home network is using a Dynamic DNS client to update some DNS entry
 address, and makes sure the current IP address is part of the IPSet `trusted`:
 
 ```
-$ cat /etc/cron.hourly/update-trusted-ips.sh
+$ cat /etc/cron.hourly/update-trusted-ips
 #!/bin/bash
 
 /root/fail2pvefw.pl -f -i trusted dns myhome.mooo.com 2>/dev/null
